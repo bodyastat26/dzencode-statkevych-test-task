@@ -21,6 +21,10 @@ public static partial class CommentRules
     /// <returns>Field name → error message. Empty if valid.</returns>
     public static Dictionary<string, string> Validate(string? userName, string? email, string? homePage, string? text)
     {
+        userName = userName?.Trim();
+        email = email?.Trim();
+        homePage = homePage?.Trim();
+        
         var errors = new Dictionary<string, string>();
 
         if (string.IsNullOrWhiteSpace(userName))
