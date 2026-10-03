@@ -1,5 +1,7 @@
 ﻿using Comments.Api.Contracts;
 using Comments.Domain.Html;
+using Comments.Domain.Validation;
+using Comments.Infrastructure.Captcha;
 using Comments.Infrastructure.Comments;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,7 +9,7 @@ namespace Comments.Api.Controllers;
 
 [ApiController]
 [Route("api/comments")]
-public class CommentsController(ICommentService comments, IHtmlSanitizer sanitizer) : ControllerBase
+public class CommentsController(ICommentService comments, IHtmlSanitizer sanitizer, ICaptchaService captcha) : ControllerBase
 {
     /// Top-level comments with full reply trees. 25 per page, default sort: newest first.
     [HttpGet]
@@ -25,6 +27,13 @@ public class CommentsController(ICommentService comments, IHtmlSanitizer sanitiz
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] CreateCommentRequest request, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.CaptchaCode)
+            || !CommentRules.LatinLettersAndDigits().IsMatch(request.CaptchaCode)
+            || !await captcha.ValidateAsync(request.CaptchaId, request.CaptchaCode, ct))
+        {
+            return ToValidationProblem(new() { ["captchaCode"] = "Invalid or expired CAPTCHA. Please try again." });
+        }
+
         var command = new CreateCommentCommand(
             request.UserName,
             request.Email,
