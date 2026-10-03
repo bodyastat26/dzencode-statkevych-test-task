@@ -78,7 +78,14 @@ export function validateFile(file: File | null): string | null {
     return 'Allowed files: JPG, GIF, PNG images or a TXT file up to 100 KB.'
 }
 
-export function validateForm(values: FormValues, file: File | null): FieldErrors {
+export function validateForm(rawValues: FormValues, file: File | null): FieldErrors {
+    
+    const values: FormValues = {
+        ...rawValues,
+        userName: rawValues.userName.trim(),
+        email: rawValues.email.trim(),
+        homePage: rawValues.homePage.trim(),
+    }
     const errors: FieldErrors = {}
 
     if (!values.userName.trim()) errors.userName = 'User name is required.'
