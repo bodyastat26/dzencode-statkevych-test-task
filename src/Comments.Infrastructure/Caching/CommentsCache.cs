@@ -5,6 +5,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Comments.Infrastructure.Caching;
 
+/// Result of a cache lookup: the key is computed BEFORE the database read,
+/// so a concurrent invalidation can't make stale data look fresh.
+public sealed record CachedPage(string? Key, PagedResult<CommentDto>? Value);
+
 /// Caches pages of top-level comments in Redis.
 /// Invalidation: every page key contains a "version"; changing the version makes all old pages stale.
 /// If Redis is unavailable, the app keeps working without the cache.
@@ -17,26 +21,28 @@ public sealed class CommentsCache(IDistributedCache cache, ILogger<CommentsCache
         AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
     };
 
-    public async Task<PagedResult<CommentDto>?> GetPageAsync(int page, CommentSort sort, CancellationToken ct)
+    public async Task<CachedPage> GetPageAsync(int page, CommentSort sort, CancellationToken ct)
     {
         try
         {
-            var json = await cache.GetStringAsync(await BuildKeyAsync(page, sort, ct), ct);
-            return json is null ? null : JsonSerializer.Deserialize<PagedResult<CommentDto>>(json);
+            var key = await BuildKeyAsync(page, sort, ct);
+            var json = await cache.GetStringAsync(key, ct);
+            var value = json is null ? null : JsonSerializer.Deserialize<PagedResult<CommentDto>>(json);
+            return new CachedPage(key, value);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Redis read failed, falling back to database");
-            return null;
+            return new CachedPage(null, null);
         }
     }
 
-    public async Task SetPageAsync(int page, CommentSort sort, PagedResult<CommentDto> value, CancellationToken ct)
+    /// Stores the page under the key obtained BEFORE the database read.
+    public async Task SetPageAsync(string key, PagedResult<CommentDto> value, CancellationToken ct)
     {
         try
         {
-            var json = JsonSerializer.Serialize(value);
-            await cache.SetStringAsync(await BuildKeyAsync(page, sort, ct), json, PageTtl, ct);
+            await cache.SetStringAsync(key, JsonSerializer.Serialize(value), PageTtl, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
