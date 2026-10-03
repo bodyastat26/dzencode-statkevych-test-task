@@ -1,122 +1,95 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useCallback, useEffect, useState } from 'react'
+import { getComments } from './api/client'
+import type { CommentDto, PagedResult, SortDir, SortField } from './api/types'
+import { CommentsTable } from './components/CommentsTable'
+import { Pagination } from './components/Pagination'
+import { useCommentsHub } from './hooks/useCommentsHub'
+import type { HubEvent } from './hooks/useCommentsHub'
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+    const [page, setPage] = useState(1)
+    const [sortBy, setSortBy] = useState<SortField>('createdAt')
+    const [sortDir, setSortDir] = useState<SortDir>('desc')
+    const [data, setData] = useState<PagedResult<CommentDto> | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [replyingTo, setReplyingTo] = useState<number | null>(null)
+    const [highlightId, setHighlightId] = useState<number | null>(null)
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    const load = useCallback(async () => {
+        setLoading(true)
+        try {
+            setData(await getComments(page, sortBy, sortDir))
+            setError(null)
+        } catch {
+            setError('Could not load comments. Is the API running?')
+        } finally {
+            setLoading(false)
+        }
+    }, [page, sortBy, sortDir])
+
+    useEffect(() => {
+        void load()
+    }, [load])
+
+    // live updates over WebSocket
+    const onHubEvent = useCallback(
+        (event: HubEvent) => {
+            if (event.type === 'commentCreated') setHighlightId(event.commentId)
+            void load()
+        },
+        [load],
+    )
+    const connected = useCommentsHub(onHubEvent)
+
+    useEffect(() => {
+        if (highlightId === null) return
+        const timer = setTimeout(() => setHighlightId(null), 3000)
+        return () => clearTimeout(timer)
+    }, [highlightId])
+
+    const handleSort = (field: SortField) => {
+        if (field === sortBy) {
+            setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        } else {
+            setSortBy(field)
+            setSortDir(field === 'createdAt' ? 'desc' : 'asc')
+        }
+        setPage(1)
+    }
+
+    return (
+        <div className="container">
+            <header className="page-header">
+                <h1>Comments</h1>
+                <span className={`live ${connected ? 'live--on' : ''}`}>{connected ? '● Live' : '○ Offline'}</span>
+            </header>
+
+            {error && <div className="alert">{error}</div>}
+
+            {data && data.items.length === 0 && !loading && <p className="muted">No comments yet. Be the first!</p>}
+
+            {data && data.items.length > 0 && (
+                <CommentsTable
+                    items={data.items}
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onSort={handleSort}
+                    highlightId={highlightId}
+                    replyingTo={replyingTo}
+                    onReplyToggle={(id) => setReplyingTo((current) => (current === id ? null : id))}
+                    renderReplyForm={(parentId) => <p className="muted">Reply form for #{parentId} comes in step 9B.</p>}
+                />
+            )}
+
+            {data && (
+                <>
+                    <Pagination page={data.page} totalPages={data.totalPages} onChange={setPage} />
+                    <p className="muted small center">
+                        {data.totalCount} top-level comments · page {data.page} of {Math.max(1, data.totalPages)}
+                    </p>
+                </>
+            )}
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    )
 }
-
-export default App
