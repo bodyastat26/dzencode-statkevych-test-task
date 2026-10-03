@@ -9,6 +9,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Comments.Infrastructure.Comments;
+using Comments.Infrastructure.Events;
+
 
 namespace Comments.Infrastructure.Messaging;
 
@@ -69,13 +72,13 @@ public sealed class ImageResizeConsumer(
         }
     }
 
-    private async Task ProcessAsync(int attachmentId, CancellationToken ct)
+       private async Task ProcessAsync(int attachmentId, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CommentsDbContext>();
         var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
         var images = scope.ServiceProvider.GetRequiredService<ImageProcessor>();
-        var cache = scope.ServiceProvider.GetRequiredService<CommentsCache>();
+        var events = scope.ServiceProvider.GetRequiredService<IEventDispatcher>();
 
         var attachment = await db.Attachments.FirstOrDefaultAsync(a => a.Id == attachmentId, ct);
         if (attachment is null || attachment.Status != AttachmentStatus.Processing)
@@ -104,6 +107,16 @@ public sealed class ImageResizeConsumer(
         }
 
         await db.SaveChangesAsync(ct);
-        await cache.InvalidateAsync(ct);
+
+        var dto = new AttachmentDto(
+            attachment.Id,
+            attachment.Kind.ToString(),
+            attachment.Status.ToString(),
+            attachment.OriginalFileName,
+            $"/uploads/{attachment.StoredFileName}",
+            attachment.Width,
+            attachment.Height);
+
+        await events.PublishAsync(new AttachmentProcessedEvent(attachment.CommentId, dto), ct);
     }
 }

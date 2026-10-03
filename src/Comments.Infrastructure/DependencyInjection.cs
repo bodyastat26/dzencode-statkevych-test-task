@@ -8,6 +8,7 @@ using Comments.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Comments.Infrastructure.Events;
 
 namespace Comments.Infrastructure;
 
@@ -51,6 +52,10 @@ public static class DependencyInjection
         services.AddSingleton<CaptchaImageRenderer>();
         services.AddSingleton<ICaptchaService, CaptchaService>();
 
+        // events
+        services.AddScoped<IEventDispatcher, EventDispatcher>();
+        services.AddScoped<IEventHandler<CommentCreatedEvent>, InvalidateCommentsCacheHandler>();
+        services.AddScoped<IEventHandler<AttachmentProcessedEvent>, InvalidateCommentsCacheHandler>();
         return services;
     }
 }

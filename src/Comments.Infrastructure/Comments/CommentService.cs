@@ -6,6 +6,7 @@ using Comments.Infrastructure.Messaging;
 using Comments.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Comments.Infrastructure.Events;
 
 namespace Comments.Infrastructure.Comments;
 
@@ -16,6 +17,7 @@ public sealed class CommentService(
     IFileStorage storage,
     ImageProcessor images,
     IMessagePublisher publisher,
+    IEventDispatcher events,
     ILogger<CommentService> logger) : ICommentService
 {
     public const int PageSize = 25;
@@ -113,7 +115,9 @@ public sealed class CommentService(
             }
         }
 
-        return CreateCommentResult.Ok(ToDto(comment));
+        var dto = ToDto(comment);
+        await events.PublishAsync(new CommentCreatedEvent(dto), ct);
+        return CreateCommentResult.Ok(dto);
     }
 
     private async Task<(Attachment? Attachment, string? Error)> StoreAttachmentAsync(FileUpload file, CancellationToken ct)
