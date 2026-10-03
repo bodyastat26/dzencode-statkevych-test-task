@@ -36,7 +36,7 @@ public sealed class CaptchaImageRenderer
             canvas.Save();
             canvas.RotateDegrees(random.Next(-25, 26), x + 10, y - 12);
             textPaint.Color = RandomColor(random, 20, 90, 255);
-            canvas.DrawText(code[i].ToString(), x, y, font, textPaint);
+            canvas.DrawText(code[i].ToString(), x, y, SKTextAlign.Left, font, textPaint);
             canvas.Restore();
         }
 

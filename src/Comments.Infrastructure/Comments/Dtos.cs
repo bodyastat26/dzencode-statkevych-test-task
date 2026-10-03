@@ -16,6 +16,8 @@ public sealed record CommentDto(
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount, int TotalPages);
 
+public sealed record FileUpload(Stream Content, string FileName, long Length);
+
 public sealed record CreateCommentCommand(
     string? UserName,
     string? Email,
@@ -23,7 +25,8 @@ public sealed record CreateCommentCommand(
     string? Text,
     int? ParentId,
     string IpAddress,
-    string? UserAgent);
+    string? UserAgent,
+    FileUpload? File = null);
 
 public sealed record CreateCommentResult(CommentDto? Comment, Dictionary<string, string>? Errors)
 {

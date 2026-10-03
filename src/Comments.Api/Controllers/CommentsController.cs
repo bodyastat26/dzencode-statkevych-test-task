@@ -25,6 +25,7 @@ public class CommentsController(ICommentService comments, IHtmlSanitizer sanitiz
 
     [HttpPost]
     [Consumes("multipart/form-data")]
+    [RequestSizeLimit(6 * 1024 * 1024)]
     public async Task<IActionResult> Create([FromForm] CreateCommentRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.CaptchaCode)
@@ -34,6 +35,11 @@ public class CommentsController(ICommentService comments, IHtmlSanitizer sanitiz
             return ToValidationProblem(new() { ["captchaCode"] = "Invalid or expired CAPTCHA. Please try again." });
         }
 
+        await using var fileStream = request.File is { Length: > 0 } ? request.File.OpenReadStream() : null;
+        var fileUpload = fileStream is null
+            ? null
+            : new FileUpload(fileStream, request.File!.FileName, request.File.Length);
+
         var command = new CreateCommentCommand(
             request.UserName,
             request.Email,
@@ -41,7 +47,8 @@ public class CommentsController(ICommentService comments, IHtmlSanitizer sanitiz
             request.Text,
             request.ParentId,
             HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            Request.Headers.UserAgent.ToString());
+            Request.Headers.UserAgent.ToString(),
+            fileUpload);
 
         var result = await comments.CreateAsync(command, ct);
         if (!result.IsSuccess)
