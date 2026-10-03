@@ -1,4 +1,6 @@
+using Comments.Api.Realtime;
 using Comments.Infrastructure;
+using Comments.Infrastructure.Events;
 using Comments.Infrastructure.Files;
 using Comments.Infrastructure.Persistence;
 using Microsoft.AspNetCore.StaticFiles;
@@ -10,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+
+// WebSocket (SignalR) + its event handlers
+builder.Services.AddSignalR();
+builder.Services.AddScoped<IEventHandler<CommentCreatedEvent>, SignalRBroadcastHandler>();
+builder.Services.AddScoped<IEventHandler<AttachmentProcessedEvent>, SignalRBroadcastHandler>();
 
 var app = builder.Build();
 
@@ -35,4 +42,5 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.MapControllers();
+app.MapHub<CommentsHub>("/hubs/comments");
 app.Run();

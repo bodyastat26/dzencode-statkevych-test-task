@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Comments.Infrastructure.Comments;
 
-/// Decorator: adds Redis caching on top of CommentService without changing it.
+/// Decorator: adds Redis caching for reads. Invalidation is done by an event handler.
 public sealed class CachedCommentService(
     CommentService inner,
     CommentsCache cache,
@@ -26,11 +26,6 @@ public sealed class CachedCommentService(
         return result;
     }
 
-    public async Task<CreateCommentResult> CreateAsync(CreateCommentCommand command, CancellationToken ct)
-    {
-        var result = await inner.CreateAsync(command, ct);
-        if (result.IsSuccess)
-            await cache.InvalidateAsync(ct);
-        return result;
-    }
+    public Task<CreateCommentResult> CreateAsync(CreateCommentCommand command, CancellationToken ct) =>
+        inner.CreateAsync(command, ct);
 }
