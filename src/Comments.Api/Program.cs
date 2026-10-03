@@ -1,23 +1,27 @@
+using Comments.Infrastructure;
+using Comments.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+var connectionString = builder.Configuration.GetConnectionString("Postgres")
+                       ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.");
 
+builder.Services.AddInfrastructure(connectionString);
 builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// apply migrations automatically on startup (convenient for Docker)
+await using (var scope = app.Services.CreateAsyncScope())
 {
-    app.MapOpenApi();
+    var db = scope.ServiceProvider.GetRequiredService<CommentsDbContext>();
+    await db.Database.MigrateAsync();
 }
 
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
+if (app.Environment.IsDevelopment())
+    app.MapOpenApi();
 
 app.MapControllers();
-
 app.Run();
