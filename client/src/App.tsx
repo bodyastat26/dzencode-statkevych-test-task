@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getComments } from './api/client'
 import type { CommentDto, PagedResult, SortDir, SortField } from './api/types'
+import { CommentForm } from './components/CommentForm'
 import { CommentsTable } from './components/CommentsTable'
 import { Pagination } from './components/Pagination'
 import { useCommentsHub } from './hooks/useCommentsHub'
@@ -13,6 +14,7 @@ export default function App() {
     const [data, setData] = useState<PagedResult<CommentDto> | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
+    const [showForm, setShowForm] = useState(false)
     const [replyingTo, setReplyingTo] = useState<number | null>(null)
     const [highlightId, setHighlightId] = useState<number | null>(null)
 
@@ -58,12 +60,31 @@ export default function App() {
         setPage(1)
     }
 
+    const handleCreated = (comment: CommentDto) => {
+        setShowForm(false)
+        setReplyingTo(null)
+        setHighlightId(comment.id)
+        if (comment.parentId === null) {
+            // new top-level comment is newest, so show the first page in default (LIFO) order
+            setSortBy('createdAt')
+            setSortDir('desc')
+            setPage(1)
+        }
+        void load()
+    }
+
     return (
         <div className="container">
             <header className="page-header">
                 <h1>Comments</h1>
                 <span className={`live ${connected ? 'live--on' : ''}`}>{connected ? '● Live' : '○ Offline'}</span>
+                <span className="spacer" />
+                <button type="button" className="btn" onClick={() => setShowForm((s) => !s)}>
+                    {showForm ? 'Close' : '+ Add comment'}
+                </button>
             </header>
+
+            {showForm && <CommentForm onSuccess={handleCreated} onCancel={() => setShowForm(false)} />}
 
             {error && <div className="alert">{error}</div>}
 
@@ -78,7 +99,9 @@ export default function App() {
                     highlightId={highlightId}
                     replyingTo={replyingTo}
                     onReplyToggle={(id) => setReplyingTo((current) => (current === id ? null : id))}
-                    renderReplyForm={(parentId) => <p className="muted">Reply form for #{parentId} comes in step 9B.</p>}
+                    renderReplyForm={(parentId) => (
+                        <CommentForm parentId={parentId} onSuccess={handleCreated} onCancel={() => setReplyingTo(null)} />
+                    )}
                 />
             )}
 
