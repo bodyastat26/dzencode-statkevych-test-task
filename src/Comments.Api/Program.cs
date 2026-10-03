@@ -3,6 +3,7 @@ using Comments.Infrastructure;
 using Comments.Infrastructure.Events;
 using Comments.Infrastructure.Files;
 using Comments.Infrastructure.Persistence;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -18,7 +19,19 @@ builder.Services.AddSignalR();
 builder.Services.AddScoped<IEventHandler<CommentCreatedEvent>, SignalRBroadcastHandler>();
 builder.Services.AddScoped<IEventHandler<AttachmentProcessedEvent>, SignalRBroadcastHandler>();
 
+// trust X-Forwarded-For from nginx (the API is reachable only through it inside Docker),
+// so comments store the real client IP instead of the proxy's
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
+
+// must run first, before anything reads the client IP
+app.UseForwardedHeaders();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
