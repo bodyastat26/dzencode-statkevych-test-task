@@ -52,11 +52,13 @@ public class Attachment
         };
     }
 
-    public void MarkProcessed(int width, int height, long sizeBytes)
+    public void MarkProcessed(int width, int height, long sizeBytes, string storedFileName, string contentType)
     {
         Width = width;
         Height = height;
         SizeBytes = sizeBytes;
+        StoredFileName = storedFileName;
+        ContentType = contentType;
         Status = AttachmentStatus.Ready;
     }
 

@@ -1,14 +1,25 @@
 ﻿using Comments.Domain.Entities;
 using Comments.Domain.Html;
 using Comments.Domain.Validation;
+using Comments.Infrastructure.Files;
+using Comments.Infrastructure.Messaging;
 using Comments.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Comments.Infrastructure.Comments;
 
-public sealed class CommentService(CommentsDbContext db, IHtmlSanitizer sanitizer, TimeProvider clock) : ICommentService
+public sealed class CommentService(
+    CommentsDbContext db,
+    IHtmlSanitizer sanitizer,
+    TimeProvider clock,
+    IFileStorage storage,
+    ImageProcessor images,
+    IMessagePublisher publisher,
+    ILogger<CommentService> logger) : ICommentService
 {
     public const int PageSize = 25;
+    public const long MaxImageUploadBytes = 5 * 1024 * 1024;
     private const int MaxTreeDepth = 100;
 
     public async Task<PagedResult<CommentDto>> GetTopLevelAsync(int page, CommentSort sort, CancellationToken ct)
@@ -59,6 +70,15 @@ public sealed class CommentService(CommentsDbContext db, IHtmlSanitizer sanitize
         if (command.ParentId is { } parentId && !await db.Comments.AnyAsync(c => c.Id == parentId, ct))
             return CreateCommentResult.Fail(new() { ["parentId"] = "Parent comment not found." });
 
+        Attachment? attachment = null;
+        if (command.File is not null)
+        {
+            var (stored, fileError) = await StoreAttachmentAsync(command.File, ct);
+            if (fileError is not null)
+                return CreateCommentResult.Fail(new() { ["file"] = fileError });
+            attachment = stored;
+        }
+
         var now = clock.GetUtcNow().UtcDateTime;
         var email = command.Email!.Trim().ToLowerInvariant();
         var userName = command.UserName!.Trim();
@@ -75,13 +95,65 @@ public sealed class CommentService(CommentsDbContext db, IHtmlSanitizer sanitize
         }
 
         var comment = Comment.Create(user, sanitized.Html, command.ParentId, command.IpAddress, command.UserAgent, now);
+        if (attachment is not null)
+            comment.AddAttachment(attachment);
+
         db.Comments.Add(comment);
         await db.SaveChangesAsync(ct);
+
+        if (attachment is { Kind: AttachmentKind.Image })
+        {
+            try
+            {
+                await publisher.PublishAsync(Queues.ImageResize, new ImageResizeMessage(attachment.Id), ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Failed to enqueue image {Id} for resizing", attachment.Id);
+            }
+        }
 
         return CreateCommentResult.Ok(ToDto(comment));
     }
 
-    /// Loads all replies of the given roots level by level (one query per depth level).
+    private async Task<(Attachment? Attachment, string? Error)> StoreAttachmentAsync(FileUpload file, CancellationToken ct)
+    {
+        var originalName = Path.GetFileName(file.FileName);
+        if (originalName.Length > 255)
+            originalName = originalName[^255..];
+
+        var extension = Path.GetExtension(originalName).ToLowerInvariant();
+
+        if (Attachment.TextExtensions.Contains(extension))
+        {
+            if (file.Length > Attachment.MaxTextFileBytes)
+                return (null, "Text file must not exceed 100 KB.");
+
+            var storedName = await storage.SaveAsync(file.Content, ".txt", ct);
+            return (Attachment.CreateText(originalName, storedName, file.Length), null);
+        }
+
+        if (Attachment.ImageExtensions.Contains(extension))
+        {
+            if (file.Length > MaxImageUploadBytes)
+                return (null, "Image must not exceed 5 MB.");
+
+            using var buffer = new MemoryStream();
+            await file.Content.CopyToAsync(buffer, ct);
+
+            // check the real content, not just the extension
+            var format = images.DetectFormat(buffer.ToArray());
+            if (format is null)
+                return (null, "File is not a valid JPG, PNG or GIF image.");
+
+            buffer.Position = 0;
+            var storedName = await storage.SaveAsync(buffer, format.Extension, ct);
+            return (Attachment.CreateImage(originalName, storedName, format.ContentType, buffer.Length), null);
+        }
+
+        return (null, "Allowed files: JPG, GIF, PNG images or a TXT file up to 100 KB.");
+    }
+
     private async Task<List<Comment>> LoadDescendantsAsync(List<int> rootIds, CancellationToken ct)
     {
         var result = new List<Comment>();
@@ -107,7 +179,6 @@ public sealed class CommentService(CommentsDbContext db, IHtmlSanitizer sanitize
     {
         var all = roots.Concat(descendants).ToDictionary(c => c.Id, ToDto);
 
-        // replies are shown oldest first, like a conversation
         foreach (var child in descendants.OrderBy(c => c.CreatedAt).ThenBy(c => c.Id))
         {
             if (child.ParentId is { } pid && all.TryGetValue(pid, out var parent))
