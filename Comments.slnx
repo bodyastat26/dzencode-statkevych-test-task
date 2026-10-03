@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Comments.Api/Comments.Api.csproj" />
+    <Project Path="src/Comments.Domain/Comments.Domain.csproj" />
+    <Project Path="src/Comments.Infrastructure/Comments.Infrastructure.csproj" />
+  </Folder>
+</Solution>
